@@ -1,0 +1,5 @@
+# Judge service requirements
+-r requirements-base.txt
+pyyaml==6.0.1
+tenacity==8.2.2
+docker==6.1.3 

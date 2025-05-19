@@ -1,0 +1,9 @@
+# Base requirements for all services
+fastapi==0.100.0
+uvicorn==0.22.0
+psycopg2-binary==2.9.6
+pydantic==2.1.1
+pydantic-settings==2.0.3
+python-dotenv==1.0.0
+redis==4.6.0
+websockets==12.0 

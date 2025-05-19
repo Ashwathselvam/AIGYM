@@ -21,7 +21,7 @@ _No Kubernetes required at this stage._
 | **Worker Queue** | `redis:7-alpine` + `celery` in worker container | 6379 | — |
 | **Episodic DB** | `postgres:15` (with `pgvector` ext) | 5432 | `pg_data` |
 | **Semantic Graph** | **NebulaGraph** (metad/graphd/storaged) | 9669 | `nebula_data*` |
-| **Vector Store** | **Infinity** (infiniflow/infinity) | 8000 | `infinity_data` |
+| **Vector Store** | **Qdrant** | 6333 | `qdrant_data` |
 | **Simulation Runner** | `docker:dind` side-car + task container | — | task tmp dirs |
 | **Frontend** | `node:20-alpine` (Next.js build) | 3000 | static build |
 
@@ -60,11 +60,11 @@ services:
     depends_on: [nebula-metad, nebula-storaged]
     ports: ["9669:9669"]
 
-  infinity:
-    image: infiniflow/infinity:latest
+  qdrant:
+    image: qdrant/qdrant:latest
     volumes:
-      - infinity_data:/data
-    ports: ["8000:8000"]
+      - qdrant_data:/qdrant/storage
+    ports: ["6333:6333"]
 
   api:
     build: ./src
@@ -75,16 +75,16 @@ services:
       GRAPH_PORT: 9669
       GRAPH_USER: root
       GRAPH_PASS: password
-      VECTOR_HOST: infinity
-      VECTOR_PORT: 8000
-    depends_on: [postgres, nebula-graphd, infinity]
+      VECTOR_HOST: qdrant
+      VECTOR_PORT: 6333
+    depends_on: [postgres, nebula-graphd, qdrant]
     ports: ["8000:8000"]
 
 volumes:
   pg_data:
   nebula_meta:
   nebula_storage:
-  infinity_data:
+  qdrant_data:
 ```
 
 ## 4. CI/CD with GitHub Actions

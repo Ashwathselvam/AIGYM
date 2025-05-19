@@ -88,29 +88,38 @@ def vector_to_str(vec: Vector) -> str:
     return "[" + ",".join(f"{x:.6f}" for x in vec) + "]"
 
 
-# ---------- Infinity driver ----------
-class InfinityStore(VectorStore):
-    """Infinity vector engine driver (hybrid / prod)."""
+# ---------- Qdrant driver ----------
+class QdrantStore(VectorStore):
+    """Qdrant-based vector store driver."""
 
-    def __init__(self, host: str = "infinity", port: int = 8000):
-        from infinity_python_client import Infinity
+    def __init__(self, host: str = "qdrant", port: int = 6333, collection: str = "concept_vectors"):
+        from qdrant_client import QdrantClient
 
-        self._client = Infinity(host=host, port=port)
+        self._collection = collection
+        self._client = QdrantClient(host=host, port=port)
         # Ensure collection exists
-        if "concept_vectors" not in self._client.list_collections():
-            self._client.create_collection("concept_vectors", dim=1536, metric="cosine")
+        if collection not in [c.name for c in self._client.get_collections().collections]:
+            self._client.create_collection(
+                collection_name=collection,
+                vector_size=int(os.getenv("VECTOR_DIM", "1536")),
+                distance="Cosine",
+            )
 
-    def upsert(self, ids: List[str], vectors: List[Vector], meta: Optional[List[dict]] = None) -> None:  # noqa: D401
+    def upsert(self, ids: List[str], vectors: List[Vector], meta: Optional[List[dict]] = None) -> None:
         payload = meta or [{}] * len(ids)
-        docs = [
-            {"id": i, "vector": list(v), "metadata": m}
+        points = [
+            {
+                "id": i,
+                "vector": v,
+                "payload": m,
+            }
             for i, v, m in zip(ids, vectors, payload)
         ]
-        self._client.upsert("concept_vectors", docs)
+        self._client.upsert(collection_name=self._collection, points=points)
 
-    def query(self, vector: Vector, top_k: int = 10) -> List[QueryResult]:  # noqa: D401
-        res = self._client.search("concept_vectors", vector, topk=top_k)
-        return [(hit["id"], hit["score"]) for hit in res]
+    def query(self, vector: Vector, top_k: int = 10) -> List[QueryResult]:
+        res = self._client.search(collection_name=self._collection, query_vector=vector, limit=top_k)
+        return [(str(p.id), p.score) for p in res]
 
 
 # ---------- factory ----------
@@ -122,9 +131,9 @@ def get_vector_store() -> VectorStore:
         dsn = os.getenv("DATABASE_URL", "postgresql://postgres:example@localhost:5432/aigym")
         return PgVectorStore(dsn)
 
-    if backend == "infinity":
-        host = os.getenv("VECTOR_HOST", "infinity")
-        port = int(os.getenv("VECTOR_PORT", "8000"))
-        return InfinityStore(host, port)
+    if backend == "qdrant":
+        host = os.getenv("VECTOR_HOST", "qdrant")
+        port = int(os.getenv("VECTOR_PORT", "6333"))
+        return QdrantStore(host, port)
 
-    raise ValueError(f"Unsupported VECTOR_BACKEND '{backend}'. Choose 'pg' or 'infinity'.") 
+    raise ValueError(f"Unsupported VECTOR_BACKEND '{backend}'. Choose 'pg' or 'qdrant'.") 

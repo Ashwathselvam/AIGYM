@@ -1,0 +1,17 @@
+# Legacy requirements file - kept for compatibility
+# For new installs, please use the appropriate requirements-*.txt file for each service
+
+# Base requirements
+-r requirements-base.txt
+
+# API requirements
+-r requirements-api.txt 
+
+# Judge requirements
+-r requirements-judge.txt
+
+# Solution Runner API requirements
+-r requirements-solution-runner.txt
+
+# Worker requirements
+-r requirements-worker.txt 

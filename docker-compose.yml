@@ -1,0 +1,190 @@
+services:
+  postgres:
+    build:
+      context: .
+      dockerfile: Dockerfile.postgres
+    container_name: aigym-postgres
+    environment:
+      POSTGRES_PASSWORD: example
+      POSTGRES_DB: aigym
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    container_name: aigym-redis
+    ports:
+      - "6379:6379"
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: aigym-qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  api:
+    build:
+      context: ./src
+      dockerfile: Dockerfile
+    container_name: aigym-api
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      DATABASE_URL: postgresql://postgres:example@postgres:5432/aigym
+      REDIS_URL: redis://redis:6379/0
+      VECTOR_BACKEND: qdrant
+      VECTOR_HOST: qdrant
+      VECTOR_PORT: 6333
+      LLM_MODEL_NAME: microsoft/phi-2
+      EMBED_MODEL_NAME: sentence-transformers/all-MiniLM-L6-v2
+      MODELS_DIR: /app/trained_models
+      USE_GPU: ${USE_GPU:-false}
+      SOLUTION_RUNNER_API_URL: http://solution-runner-api:8080
+    volumes:
+      - ./src:/app
+      - llm_models:/app/trained_models
+      - ./task_specs:/app/task_specs:ro
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
+      - qdrant
+      - solution-runner-api
+    networks:
+      - solution-net
+      - default
+
+  worker:
+    build:
+      context: ./src
+      dockerfile: Dockerfile.gpu
+    container_name: aigym-worker
+    command: celery -A workers.celery_app worker --loglevel=info
+    platform: ${PLATFORM:-linux/arm64} # Default for Mac, set empty for GPU machines
+    environment:
+      DATABASE_URL: postgresql://postgres:example@postgres:5432/aigym
+      REDIS_URL: redis://redis:6379/0
+      VECTOR_BACKEND: qdrant
+      VECTOR_HOST: qdrant
+      VECTOR_PORT: 6333
+      LLM_MODEL_NAME: microsoft/phi-2
+      EMBED_MODEL_NAME: sentence-transformers/all-MiniLM-L6-v2
+      MODELS_DIR: /app/trained_models
+      USE_GPU: ${USE_GPU:-false}
+    volumes:
+      - ./src:/app
+      - llm_models:/app/trained_models
+    depends_on:
+      - redis
+      - api
+
+  solution-runner:
+    image: docker:dind
+    container_name: aigym-solution-runner
+    privileged: true
+    environment:
+      DOCKER_TLS_CERTDIR: ""
+      DOCKER_HOST: tcp://0.0.0.0:2375
+    volumes:
+      - solution-tmp:/tmp/solutions
+    tmpfs:
+      - /tmp/solutions:exec,mode=777
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+    networks:
+      - solution-net
+      - default
+    ports:
+      - "2375"
+    expose:
+      - "2375"
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: "1G"
+
+  solution-runner-api:
+    build:
+      context: ./src
+      dockerfile: Dockerfile.solution-runner-api
+    container_name: aigym-solution-runner-api
+    environment:
+      DOCKER_HOST: http://solution-runner:2375
+      PREPULL_IMAGES: "false"
+    volumes:
+      - ./src:/app
+      - solution-tmp:/tmp/solutions
+    ports:
+      - "8080:8080"
+    command: python -m uvicorn solution_runner_api:app --host 0.0.0.0 --port 8080 --log-level info
+    depends_on:
+      solution-runner:
+        condition: service_healthy
+    restart: on-failure
+    networks:
+      - solution-net
+      - default
+
+  judge:
+    build:
+      context: ./src
+      dockerfile: Dockerfile.judge
+    container_name: aigym-judge
+    environment:
+      SOLUTION_RUNNER_API_URL: http://solution-runner-api:8080
+      DATABASE_URL: postgresql://postgres:example@postgres:5432/aigym
+      REDIS_URL: redis://redis:6379/0
+      OPENAI_API_KEY: ""
+    volumes:
+      - ./task_specs:/app/task_specs:ro
+    depends_on:
+      - solution-runner-api
+      - postgres
+      - redis
+    networks:
+      - solution-net
+      - default
+
+  trainer:
+    build:
+      context: ./src
+      dockerfile: Dockerfile.gpu
+    container_name: aigym-trainer
+    platform: ${PLATFORM:-linux/arm64} # Default for Mac, set empty for GPU machines
+    command: python -m workers.trainer_service
+    environment:
+      DATABASE_URL: postgresql://postgres:example@postgres:5432/aigym
+      REDIS_URL: redis://redis:6379/0
+      LLM_MODEL_NAME: microsoft/phi-2
+      EMBED_MODEL_NAME: sentence-transformers/all-MiniLM-L6-v2
+      MODELS_DIR: /app/trained_models
+      USE_GPU: ${USE_GPU:-false}
+    volumes:
+      - ./src:/app
+      - llm_models:/app/trained_models
+    depends_on:
+      - postgres
+      - redis
+
+networks:
+  solution-net:
+    internal: true
+  default:
+
+volumes:
+  pg_data:
+  qdrant_data:
+  solution-tmp:
+  llm_models:

@@ -9,7 +9,7 @@ Define the **semantic memory** layer that distils episodic logs into reusable kn
 | Layer | Tech | Why |
 |-------|------|-----|
 | Graph | **NebulaGraph OSS** (distributed LP-graph) | Horizontal scalability, Apache-2 licence |
-| Vector | **Infinity (infiniflow/infinity)** *or* pgvector | Blazing-fast hybrid search incl. tensor & sparse |
+| Vector | **Qdrant** *or* pgvector | Mature OSS ANN search, sharding & RBAC |
 
 Hybrid = graph stores relationships; vector store keeps dense embeddings. Nodes are linked via stable `concept_id` (UUID).
 
@@ -51,14 +51,14 @@ sequenceDiagram
 ```
 
 ## 5. Retrieval APIs
-### Python wrapper (nebula3-driver + Infinity client)
+### Python wrapper (nebula3-driver + Qdrant client)
 ```python
 from nebula3.gclient.net import ConnectionPool
 from nebula3.Config import Config
-from infinity_python_client import Infinity
+from qdrant_client import QdrantClient
 
-# Initialise Infinity
-infinity = Infinity(host="infinity", port=8000)
+# Initialise Qdrant
+qdrant = QdrantClient(host="qdrant", port=6333)
 
 cfg = Config()
 cfg.max_connection_pool_size = 10
@@ -66,7 +66,9 @@ nebula_pool = ConnectionPool()
 nebula_pool.init([("nebula-graphd", 9669)], cfg)
 
 def vector_search(query_text, k=5):
-    ids = infinity.search(collection="concept_vectors", query=query_text, topk=k)
+    vec = embed(query_text)
+    hits = qdrant.search("concept_vectors", vec, limit=k)
+    ids = [h.id for h in hits]
     with nebula_pool.session_context("root", "password") as sess:
         id_str = ','.join(f'\"{i}\"' for i in ids)
         res = sess.execute(f"MATCH (v:Concept) WHERE id(v) IN [{id_str}] RETURN v")

@@ -1,0 +1,30 @@
+task_id: sorting_001
+category: coding
+grade: G1
+prompt: |
+  Implement Bubble Sort in Python.
+  
+  Your task is to write a Python function called `bubble_sort` that takes a list of integers as input
+  and returns the sorted list using the Bubble Sort algorithm.
+  
+  Example:
+  Input: [5, 1, 4, 2, 8]
+  Output: [1, 2, 4, 5, 8]
+  
+  Requirements:
+  1. The function should be named `bubble_sort`
+  2. The function should take a single parameter: a list of integers
+  3. The function should return the sorted list
+  4. You must implement the classic bubble sort algorithm
+version: v1
+rubric_version: v1.0
+time_limit_sec: 10
+memory_mb: 256
+metric: runtime_ms
+rubric:
+  - description: "Output sorted array correct"
+    weight: 0.6
+  - description: "Time complexity O(n^2) acceptable"
+    weight: 0.2
+  - description: "Code follows PEP8"
+    weight: 0.2 
